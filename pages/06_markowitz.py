@@ -1,5 +1,5 @@
-import numpy as np
 import streamlit as st
+import numpy as np
 
 from src.config import ASSETS, DEFAULT_START_DATE, DEFAULT_END_DATE, ensure_project_dirs
 from src.download import load_market_bundle
@@ -12,6 +12,7 @@ from src.markowitz import (
 )
 from src.plots import plot_correlation_heatmap, plot_frontier
 from src.api.macro import macro_snapshot
+from src.portfolio_optimization import optimize_target_return
 
 ensure_project_dirs()
 st.title("Módulo 6 - Optimización de portafolio (Markowitz)")
@@ -21,6 +22,13 @@ with st.sidebar:
     start_date = st.date_input("Fecha inicial", value=DEFAULT_START_DATE, key="mk_start")
     end_date = st.date_input("Fecha final", value=DEFAULT_END_DATE, key="mk_end")
     n_portfolios = st.slider("Número de portafolios", min_value=5000, max_value=50000, value=10000, step=5000)
+    target_return = st.slider(
+        "Retorno objetivo (%)",
+        min_value=0.0,
+        max_value=0.30,
+        value=0.10,
+        step=0.01,
+    )
 
 tickers = [meta["ticker"] for meta in ASSETS.values()]
 bundle = load_market_bundle(tickers=tickers, start=str(start_date), end=str(end_date))
@@ -80,3 +88,20 @@ with col1:
 with col2:
     st.subheader("Portafolio de máximo Sharpe")
     st.dataframe(weights_table(max_sharpe), width="stretch")
+
+st.subheader("Optimización con retorno objetivo")
+
+result = optimize_target_return(returns, target_return)
+
+if result is not None:
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("Retorno esperado", f"{result['return']:.2%}")
+        st.metric("Volatilidad", f"{result['volatility']:.2%}")
+
+    with col2:
+        st.write("Pesos del portafolio:")
+        st.write(dict(zip(returns.columns, np.round(result["weights"], 4))))
+else:
+    st.warning("No se pudo encontrar solución para ese nivel de retorno.")
