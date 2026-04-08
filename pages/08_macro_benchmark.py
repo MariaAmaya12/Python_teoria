@@ -35,6 +35,15 @@ benchmark_returns = returns[GLOBAL_BENCHMARK]
 macro = macro_snapshot()
 rf_annual = macro["risk_free_rate_pct"] / 100 if macro["risk_free_rate_pct"] == macro["risk_free_rate_pct"] else 0.03
 
+if macro["inflation_yoy"] != macro["inflation_yoy"]:
+    st.warning("No se pudo obtener inflación desde API. Usando fallback o valor no disponible.")
+
+if macro["usdcop_market"] != macro["usdcop_market"]:
+    st.warning("No se pudo obtener USD/COP spot desde API. Usando fallback o valor no disponible.")
+
+if macro["cop_per_usd"] != macro["cop_per_usd"]:
+    st.warning("No se pudo obtener USD/COP promedio anual desde API. Usando fallback o valor no disponible.")
+
 col1, col2, col3, col4 = st.columns(4)
 col1.metric(
     "Tasa libre de riesgo (%)",
@@ -52,6 +61,7 @@ col4.metric(
     "USD/COP (promedio anual)",
     f"{macro['cop_per_usd']:.2f}" if macro["cop_per_usd"] == macro["cop_per_usd"] else "N/D"
 )
+
 summary_df, extras_df, cum_port, cum_bench = benchmark_summary(
     portfolio_returns=portfolio_returns,
     benchmark_returns=benchmark_returns,

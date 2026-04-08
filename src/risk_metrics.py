@@ -5,6 +5,7 @@ import pandas as pd
 from scipy.stats import norm
 
 from src.config import TRADING_DAYS
+from scipy.stats import chi2
 
 
 def annual_to_daily_rf(rf_annual: float, periods: int = TRADING_DAYS) -> float:
@@ -216,3 +217,70 @@ def risk_comparison_table(
             )
 
     return pd.DataFrame(rows)
+
+def kupiec_test(returns: pd.Series, var: float, alpha: float = 0.95) -> dict:
+    """
+    Test de Kupiec (Proportion of Failures - POF).
+
+    Evalúa si el número de violaciones del VaR es consistente
+    con el nivel de confianza esperado.
+
+    - returns: serie de rendimientos
+    - var: VaR como pérdida positiva (ej: 0.03)
+    - alpha: nivel de confianza (ej: 0.95)
+    """
+
+    validate_confidence_level(alpha)
+
+    try:
+        r = validate_returns_series(returns)
+    except ValueError:
+        return {}
+
+    # 🔥 violaciones: cuando pérdida supera el VaR
+    violations = r < -var
+
+    n = len(r)
+    x = int(violations.sum())
+
+    if n == 0:
+        return {}
+
+    p = 1 - alpha
+    p_hat = x / n
+
+    # ⚠️ evitar problemas numéricos extremos
+    if p_hat == 0 or p_hat == 1:
+        return {
+            "violations": x,
+            "n_obs": n,
+            "expected_fail_rate": float(p),
+            "observed_fail_rate": float(p_hat),
+            "lr_stat": np.nan,
+            "p_value": np.nan,
+            "conclusion": "Insuficiente variabilidad para test",
+        }
+
+    # 🔥 Likelihood Ratio (Kupiec)
+    lr = -2 * (
+        (n - x) * np.log((1 - p) / (1 - p_hat)) +
+        x * np.log(p / p_hat)
+    )
+
+    p_value = 1 - chi2.cdf(lr, df=1)
+
+    conclusion = (
+        "No se rechaza el modelo (VaR consistente)"
+        if p_value > 0.05
+        else "Se rechaza el modelo (VaR inconsistente)"
+    )
+
+    return {
+        "violations": x,
+        "n_obs": n,
+        "expected_fail_rate": float(p),
+        "observed_fail_rate": float(p_hat),
+        "lr_stat": float(lr),
+        "p_value": float(p_value),
+        "conclusion": conclusion,
+    }
