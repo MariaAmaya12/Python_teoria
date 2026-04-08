@@ -5,10 +5,10 @@ import logging
 import os
 from typing import Dict
 
-import pandas as pd
 import requests
+import pandas as pd
 import streamlit as st
-import yfinance as yf   
+import yfinance as yf
 import wbgapi as wb
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
@@ -20,6 +20,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 FRED_TIMEOUT = 20
+MACRO_CACHE_URL = "https://raw.githubusercontent.com/MariaAmaya12/Portafolio_Api/feat/macro-cache/data/macro_cache.json"
 
 
 def _empty_fred_df() -> pd.DataFrame:
@@ -213,6 +214,7 @@ def _get_worldbank_fx() -> pd.DataFrame:
         logger.warning(f"[WBGAPI] Error FX: {e}")
         return _empty_fred_df()
 
+
 def _get_yfinance_usdcop() -> float:
     """
     Trae USD/COP de mercado desde Yahoo Finance.
@@ -231,7 +233,6 @@ def _get_yfinance_usdcop() -> float:
         if df is None or df.empty:
             return float("nan")
 
-        # Si viene MultiIndex, aplanar usando el primer nivel
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
@@ -241,7 +242,6 @@ def _get_yfinance_usdcop() -> float:
 
         series = df[close_col]
 
-        # Si por alguna razón sigue siendo DataFrame, tomar la primera columna
         if isinstance(series, pd.DataFrame):
             series = series.iloc[:, 0]
 
@@ -256,6 +256,31 @@ def _get_yfinance_usdcop() -> float:
         logger.warning(f"[YFINANCE FX] Error USD/COP: {e}")
         return float("nan")
 
+
+def _get_github_macro_cache() -> dict:
+    """
+    Lee el cache macro publicado en GitHub.
+    """
+    try:
+        session = _build_session()
+        response = session.get(MACRO_CACHE_URL, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        return {
+            "risk_free_rate_pct": data.get("risk_free_rate_pct"),
+            "inflation_yoy": data.get("inflation_yoy"),
+            "cop_per_usd": data.get("cop_per_usd"),
+            "usdcop_market": data.get("usdcop_market"),
+            "source": data.get("source", "github_actions_cache"),
+            "last_updated": data.get("last_updated"),
+        }
+
+    except Exception as e:
+        logger.warning(f"[GITHUB CACHE] Error leyendo macro_cache.json: {e}")
+        return {}
+
+
 def latest_value(df: pd.DataFrame) -> float:
     if df.empty:
         return float("nan")
@@ -268,18 +293,38 @@ def yoy_inflation(cpi_df: pd.DataFrame) -> float:
 
     c = cpi_df.set_index("date")["value"].sort_index()
 
-    # Si es serie mensual tipo CPI index, calcular variación interanual
     if len(c) >= 13:
         yoy = c.pct_change(12).dropna()
         if not yoy.empty:
             return float(yoy.iloc[-1])
 
-    # Si ya es una tasa anual (como la del Banco Mundial), usar último valor / 100
     return float(c.iloc[-1]) / 100
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def macro_snapshot() -> Dict[str, float]:
+    """
+    Devuelve snapshot macro usando primero cache en GitHub
+    y luego APIs en vivo como fallback.
+    """
+    cache = _get_github_macro_cache()
+
+    if cache:
+        rf = cache.get("risk_free_rate_pct")
+        inf = cache.get("inflation_yoy")
+        cop = cache.get("cop_per_usd")
+        usdcop_market = cache.get("usdcop_market")
+
+        if any(x == x for x in [rf, inf, cop, usdcop_market] if x is not None):
+            return {
+                "risk_free_rate_pct": rf if rf is not None else float("nan"),
+                "inflation_yoy": inf if inf is not None else float("nan"),
+                "cop_per_usd": cop if cop is not None else float("nan"),
+                "usdcop_market": usdcop_market if usdcop_market is not None else float("nan"),
+                "source": cache.get("source", "github_actions_cache"),
+                "last_updated": cache.get("last_updated"),
+            }
+
     rf_df = get_fred_series(FRED_SERIES["risk_free_rate"])
     cpi_df = get_fred_series(FRED_SERIES["inflation"])
     cop_df = get_fred_series(FRED_SERIES["cop_usd"])
@@ -297,4 +342,6 @@ def macro_snapshot() -> Dict[str, float]:
         "inflation_yoy": yoy_inflation(cpi_df) if not cpi_df.empty else float("nan"),
         "cop_per_usd": latest_value(cop_df) if not cop_df.empty else float("nan"),
         "usdcop_market": usdcop_market,
+        "source": "live_api_fallback",
+        "last_updated": None,
     }

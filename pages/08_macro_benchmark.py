@@ -35,6 +35,12 @@ benchmark_returns = returns[GLOBAL_BENCHMARK]
 macro = macro_snapshot()
 rf_annual = macro["risk_free_rate_pct"] / 100 if macro["risk_free_rate_pct"] == macro["risk_free_rate_pct"] else 0.03
 
+if "source" in macro and macro["source"]:
+    st.caption(f"Fuente macro: {macro['source']}")
+
+if "last_updated" in macro and macro["last_updated"]:
+    st.caption(f"Última actualización: {macro['last_updated']}")
+
 if macro["inflation_yoy"] != macro["inflation_yoy"]:
     st.warning("No se pudo obtener inflación desde API. Usando fallback o valor no disponible.")
 
