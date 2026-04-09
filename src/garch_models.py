@@ -188,6 +188,7 @@ def fit_garch_models(log_returns: pd.Series) -> dict:
             )
 
     diagnostics = pd.DataFrame(diagnostics_rows)
+    diagnostics["valor"] = diagnostics["valor"].astype(str)
 
     vol_df = pd.concat(vol_dict.values(), axis=1)
 
