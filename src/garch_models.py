@@ -100,9 +100,13 @@ def fit_garch_models(log_returns: pd.Series) -> dict:
     best_model_name = comparison.iloc[0]["modelo"]
     best_result = fitted_results[best_model_name]
 
+    try:
     forecast = best_result.forecast(horizon=10)
     forecast_var = forecast.variance.iloc[-1]
-
+    except ValueError:
+    forecast = best_result.forecast(horizon=10, method="simulation")
+    forecast_var = forecast.variance.iloc[-1]
+    
     forecast_df = pd.DataFrame(
         {
             "horizonte": list(range(1, len(forecast_var) + 1)),
